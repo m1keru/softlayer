@@ -1,5 +1,9 @@
 package main
 
+/* TODO:
+* List free adddresses based on FREE record
+ */
+
 import (
 	"bufio"
 	"encoding/json"
@@ -13,12 +17,89 @@ import (
 	"github.com/softlayer/softlayer-go/session"
 )
 
+type ipAddress struct {
+	id   string
+	ip   net.IP
+	ptr  string
+	ttl  int
+	note string
+	sess *session.Session
+}
+
+func (ip ipAddress) isNetworkLocal() bool {
+	network := "10.0.0.0/8"
+	_, subnet, _ := net.ParseCIDR(network)
+	if subnet.Contains(ip.ip) {
+		return true
+	}
+	return false
+}
+
+func (ip ipAddress) pushPTR() {
+	dnsservice := services.GetDnsDomainService(ip.sess)
+	record, err := dnsservice.CreatePtrRecord(&ip.id, &ip.ptr, &ip.ttl)
+	if err != nil {
+		fmt.Printf("error: unable to update ptr %s ", err)
+		os.Exit(127)
+	}
+	printJSON(record)
+}
+
+func (ip ipAddress) updatePTR(force bool) {
+	if ip.isNetworkLocal() {
+		fmt.Println("this is internal ip. no ptr will be assigned")
+		return
+	}
+	if ip.ptr == "" {
+		ip.ptr = "FREE"
+	}
+
+	fmt.Printf("update PTR for IP %s to '%s'\n", ip.id, ip.ptr)
+
+	if force == false {
+		// remove without a prompt
+		confirm()
+	}
+	ip.pushPTR()
+}
+
+func (ip ipAddress) updateIPNote(force bool) {
+
+	ipservice := services.GetNetworkSubnetIpAddressService(ip.sess)
+	ipObject, err := ipservice.GetByIpAddress(&ip.id)
+	if ipObject.Id == nil {
+		fmt.Println("error: unable to find IP in IBM subnets")
+		if err != nil {
+			fmt.Printf("error: %s\n", err.Error())
+		}
+		os.Exit(2)
+	}
+	if ip.note == "" {
+		ip.note = "FREE"
+	}
+	currnetNote := "FREE"
+	if ipObject.Note != nil {
+		currnetNote = *ipObject.Note
+	}
+	fmt.Printf("update IP note for %s from: '%s' to '%s'\n", *ipObject.IpAddress, currnetNote, ip.note)
+	if force == false {
+		confirm()
+	}
+	ipObject.Note = &ip.note
+	ipservice.Id(*ipObject.Id).EditObject(&ipObject)
+	ipObject2, err := ipservice.GetByIpAddress(&ip.id)
+	if err != nil {
+		fmt.Println("updated, but we can not get new ip description form api")
+	}
+	printJSON(ipObject2)
+}
+
 func main() {
 
 	ip := flag.String("ip", "", "ip address to delete in x.x.x.x form. default ''")
-	ptr := flag.String("ptr", "none", "ip address ptr [hostname]. default 'free'")
+	ptr := flag.String("ptr", "", "ip address ptr [hostname]. default 'free'")
 	ttl := flag.Int("ttl", 3600, "ttl for ptr. default 3600")
-	note := flag.String("note", "FREE", "note about ip in ibm cloud [host.domain.com]. default 'FREE'")
+	note := flag.String("note", "", "note about ip in ibm cloud [host.domain.com]. default ''")
 	force := flag.Bool("force", false, "force yes to rename prompt. Use with caution!!!. default false")
 
 	flag.Parse()
@@ -36,71 +117,16 @@ func main() {
 	username := os.Getenv("SL_USER")
 	apikey := os.Getenv("SL_APIKEY")
 	sess := session.New(username, apikey)
-
-	if *ptr != "none" {
-		network := "10.0.0.0/8"
-		_, subnet, _ := net.ParseCIDR(network)
-		if subnet.Contains(ipToDelete) {
-			fmt.Println("this is internal ip. no ptr will be assigned")
-		} else {
-			if *ptr == "" {
-				*ptr = "FREE"
-			}
-			approve := false
-			fmt.Printf("update PTR for IP %s to '%s'\n", *ip, *ptr)
-			if *force {
-				approve = true
-			} else {
-				approve = confirm()
-			}
-			if approve {
-				dnsservice := services.GetDnsDomainService(sess)
-				record, err := dnsservice.CreatePtrRecord(ip, ptr, ttl)
-				if err != nil {
-					fmt.Printf("error: unable to update ptr %s ", err)
-					os.Exit(126)
-				}
-				printJSON(record)
-			} else {
-				fmt.Println("canceled")
-				os.Exit(129)
-			}
-		}
+	address := ipAddress{
+		id:   *ip,
+		ptr:  *ptr,
+		ttl:  *ttl,
+		note: *note,
+		sess: sess,
 	}
 
-	ipservice := services.GetNetworkSubnetIpAddressService(sess)
-	ipObject, err := ipservice.GetByIpAddress(ip)
-	if ipObject.Id == nil {
-		fmt.Println("error: unable to find IP in IBM subnets")
-		if err != nil {
-			fmt.Printf("error: %s\n", err.Error())
-		}
-		os.Exit(2)
-	}
-	if *note == "" {
-		*note = "FREE"
-	}
-	currnetNote := "FREE"
-	if ipObject.Note != nil {
-		currnetNote = *ipObject.Note
-	}
-	fmt.Printf("update IP note for %s from: '%s' to '%s'\n", *ipObject.IpAddress, currnetNote, *note)
-	approve := false
-	if *force {
-		approve = true
-	} else {
-		approve = confirm()
-	}
-	if approve {
-		ipObject.Note = note
-		ipservice.Id(*ipObject.Id).EditObject(&ipObject)
-		ipObject2, _ := ipservice.GetByIpAddress(ip)
-		printJSON(ipObject2)
-		return
-	}
-	fmt.Println("canceled")
-	os.Exit(129)
-
+	address.updatePTR(*force)
+	address.updateIPNote(*force)
 }
 
 func printJSON(obj interface{}) {
@@ -129,5 +155,7 @@ func confirm() bool {
 	if s == "y" || s == "yes" {
 		return true
 	}
+	fmt.Println("canceled")
+	os.Exit(128)
 	return false
 }
