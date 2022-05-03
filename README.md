@@ -7,6 +7,8 @@ __Creds must be provided with environment variables `SL_USER` and `SL_APIKEY`__
 go build
 
 # Usage
+
+```bash
 ./softlayer
   -force
         force yes to rename prompt. Use with caution!!!. default false
@@ -18,4 +20,4 @@ go build
         ip address ptr [host.domain.zone]. default 'free' (default "none")
   -ttl int
         ttl for ptr. default 3600 (default 3600)
-
+```
