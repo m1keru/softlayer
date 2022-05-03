@@ -15,13 +15,15 @@ import (
 
 func main() {
 
-	ip := flag.String("ip", "", "ip address to delete in x.x.x.x form")
-	note := flag.String("note", "", "note about ip in ibm cloud [tor1-xxx-xxx]")
-	force := flag.Bool("force", false, "force yes to rename prompt. Use with caution!!!")
+	ip := flag.String("ip", "", "ip address to delete in x.x.x.x form. default ''")
+	ptr := flag.String("ptr", "none", "ip address ptr [tor1-xxx-xxx.etrigan.net]. default 'free'")
+	ttl := flag.Int("ttl", 3600, "ttl for ptr. default 3600")
+	note := flag.String("note", "FREE", "note about ip in ibm cloud [tor1-xxx-xxx]. default 'FREE'")
+	force := flag.Bool("force", false, "force yes to rename prompt. Use with caution!!!. default false")
 
 	flag.Parse()
 
-	if len(os.Args) == 1 {
+	if flag.NFlag() == 0 || *ip == "" {
 		flag.PrintDefaults()
 		os.Exit(1)
 	}
@@ -34,6 +36,38 @@ func main() {
 	username := os.Getenv("SL_USER")
 	apikey := os.Getenv("SL_APIKEY")
 	sess := session.New(username, apikey)
+
+	if *ptr != "none" {
+		network := "10.0.0.0/8"
+		_, subnet, _ := net.ParseCIDR(network)
+		if subnet.Contains(ipToDelete) {
+			fmt.Println("this is internal ip. no ptr will be assigned")
+		} else {
+			if *ptr == "" {
+				*ptr = "FREE"
+			}
+			approve := false
+			fmt.Printf("update PTR for IP %s to '%s'\n", *ip, *ptr)
+			if *force {
+				approve = true
+			} else {
+				approve = confirm()
+			}
+			if approve {
+				dnsservice := services.GetDnsDomainService(sess)
+				record, err := dnsservice.CreatePtrRecord(ip, ptr, ttl)
+				if err != nil {
+					fmt.Printf("error: unable to update ptr %s ", err)
+					os.Exit(126)
+				}
+				printJSON(record)
+			} else {
+				fmt.Println("canceled")
+				os.Exit(129)
+			}
+		}
+	}
+
 	ipservice := services.GetNetworkSubnetIpAddressService(sess)
 	ipObject, err := ipservice.GetByIpAddress(ip)
 	if ipObject.Id == nil {
@@ -43,7 +77,10 @@ func main() {
 		}
 		os.Exit(2)
 	}
-	currnetNote := ""
+	if *note == "" {
+		*note = "FREE"
+	}
+	currnetNote := "FREE"
 	if ipObject.Note != nil {
 		currnetNote = *ipObject.Note
 	}
