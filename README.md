@@ -1,6 +1,7 @@
 # Info
-Tool to mange IP notes and PTR in IBM Soflayer Classic Infrastructure
-Creds must be provided with environment variables `SL_USER` and `SL_APIKEY`
+Tool to mange IP notes and PTR in IBM Soflayer Classic Infrastructure.
+
+__Creds must be provided with environment variables `SL_USER` and `SL_APIKEY`__
 
 # Build
 go build
