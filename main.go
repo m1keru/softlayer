@@ -16,9 +16,9 @@ import (
 func main() {
 
 	ip := flag.String("ip", "", "ip address to delete in x.x.x.x form. default ''")
-	ptr := flag.String("ptr", "none", "ip address ptr [tor1-xxx-xxx.etrigan.net]. default 'free'")
+	ptr := flag.String("ptr", "none", "ip address ptr [hostname]. default 'free'")
 	ttl := flag.Int("ttl", 3600, "ttl for ptr. default 3600")
-	note := flag.String("note", "FREE", "note about ip in ibm cloud [tor1-xxx-xxx]. default 'FREE'")
+	note := flag.String("note", "FREE", "note about ip in ibm cloud [host.domain.com]. default 'FREE'")
 	force := flag.Bool("force", false, "force yes to rename prompt. Use with caution!!!. default false")
 
 	flag.Parse()
