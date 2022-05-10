@@ -1,7 +1,7 @@
 package main
 
 /* TODO:
-* List free adddresses based on FREE record
+*  Rework -list to less ugly style
  */
 
 import (
