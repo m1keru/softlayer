@@ -7,6 +7,7 @@ package main
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"net"
@@ -14,12 +15,12 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/softlayer/softlayer-go/filter"
+	"github.com/softlayer/softlayer-go/datatypes"
 	"github.com/softlayer/softlayer-go/services"
 	"github.com/softlayer/softlayer-go/session"
 )
 
-type ipAddress struct {
+type softlayer struct {
 	id   string
 	ip   net.IP
 	ptr  string
@@ -28,133 +29,182 @@ type ipAddress struct {
 	sess *session.Session
 }
 
-func (ip ipAddress) isNetworkLocal() bool {
+func (cli softlayer) isNetworkLocal() bool {
 	network := "10.0.0.0/8"
 	_, subnet, _ := net.ParseCIDR(network)
-	if subnet.Contains(ip.ip) {
+	if subnet.Contains(cli.ip) {
 		return true
 	}
 	return false
 }
 
-func (ip ipAddress) findIPS(networkType string) {
+func (cli softlayer) getPTR() (datatypes.Dns_Domain_ResourceRecord, error) {
+	re := regexp.MustCompile(".*\\.(.*)$")
+	ipservice := services.GetNetworkSubnetIpAddressService(cli.sess)
+	ipObject, err := ipservice.GetByIpAddress(&cli.id)
+	if ipObject.Id == nil {
+		fmt.Println("error: unable to find cli in IBM subnets")
+		if err != nil {
+			fmt.Printf("error: %s\n", err.Error())
+		}
+		os.Exit(2)
+	}
+	subnetService := services.GetNetworkSubnetService(cli.sess)
+	rawPTRPool, _ := subnetService.Id(*ipObject.SubnetId).GetReverseDomainRecords()
+	strippedPTRPool := rawPTRPool[0].ResourceRecords
+	match := re.FindStringSubmatch(cli.id)
+	host := match[1]
+	var ptr string
+	for _, ptrRecord := range strippedPTRPool {
+		if ptrRecord.Host == nil {
+			ptr = ""
+		} else {
+			ptr = *ptrRecord.Host
+		}
+		if ptr == string(host) {
+			return ptrRecord, nil
+		}
+	}
+	return datatypes.Dns_Domain_ResourceRecord{}, errors.New("PTR not found")
+}
+
+func (cli softlayer) findIPS(networkType string) {
 	var filterNet string
 	mask := "id,networkIdentifier,note,cidr,gateway"
-	accountService := services.GetAccountService(ip.sess)
-	subnetService := services.GetNetworkSubnetService(ip.sess)
-	//ipservice := services.GetNetworkSubnetIpAddressService(ip.sess)
-	//dnsservice := services.GetDnsDomainService(ip.sess)
+	accountService := services.GetAccountService(cli.sess)
+	subnetService := services.GetNetworkSubnetService(cli.sess)
+	re := regexp.MustCompile(".*\\.(.*)$")
 	if networkType == "public" {
-		//filterNet = filter.Path("subnets.networkIdentifier").Eq("158.85.102.*").Build()
 		filterNet = `{"subnets":
 			{
-			 "networkIdentifier":{"operation":"!~ 10.*"},
+			 "networkIdentifier":{"operation":"!~ ^10\\..*"},
 			 "note":{"operation":"~ PARTIAL AVAILABLE"}
 			 }
 		}`
-	} else {
-		filterNet = filter.Path("subnets.networkidentifier").Like("10.*").Build()
-	}
-	filterNetNote := filter.Path("subnets.note").Like("PARTIAL AVAILABLE").Build()
-	println(filterNetNote)
-	subnets, err := accountService.Mask(mask).Filter(filterNet).GetSubnets()
-	//printJSON(subnets)
-	if err != nil {
-		fmt.Println("error: unable to get Subnets from Softlayer", err)
-		os.Exit(1)
-	}
-	re := regexp.MustCompile(".*\\.(.*)$")
-	for _, subnet := range subnets {
-		var resultingArray [][3]string // [[ip,ptr,note],[ip,ptr,note]]
-		var tmpArray [3]string
-		printJSON(subnet)
-		fmt.Printf("========== %s/%d,%s ===========\n", *subnet.NetworkIdentifier, *subnet.Cidr, *subnet.Gateway)
-		rawPTRPool, _ := subnetService.Id(*subnet.Id).GetReverseDomainRecords()
-		strippedPTRPool := rawPTRPool[0].ResourceRecords
-		rawIPPool, _ := subnetService.Id(*subnet.Id).GetIpAddresses()
-		strippedIPPool := rawIPPool[0].Subnet.IpAddresses[2 : len(rawIPPool[0].Subnet.IpAddresses)-1]
-		for _, ibmIP := range strippedIPPool {
-			if *ibmIP.IpAddress == "" {
-				continue
-			}
-			var ip, ptr, note string
-			ip = *ibmIP.IpAddress
-			if ibmIP.Note == nil {
-				note = ""
-			} else {
-				note = *ibmIP.Note
-			}
-			match := re.FindStringSubmatch(*ibmIP.IpAddress)
-			host := match[1]
-			//fmt.Println(host)
-			for _, ptrRecord := range strippedPTRPool {
-				if ptrRecord.Host == nil {
-					ptr = ""
+		subnets, err := accountService.Mask(mask).Filter(filterNet).GetSubnets()
+		if err != nil {
+			fmt.Println("error: unable to get Subnets from Softlayer", err)
+			os.Exit(1)
+		}
+
+		fmt.Println("==============public networks============")
+		for _, subnet := range subnets {
+			var resultingArray [][3]string // [[ip,ptr,note],[ip,ptr,note]]
+			var tmpArray [3]string
+			fmt.Printf("----- %s/%d,%s -----\n", *subnet.NetworkIdentifier, *subnet.Cidr, *subnet.Gateway)
+			rawPTRPool, _ := subnetService.Id(*subnet.Id).GetReverseDomainRecords()
+			strippedPTRPool := rawPTRPool[0].ResourceRecords
+			rawIPPool, _ := subnetService.Id(*subnet.Id).GetIpAddresses()
+			strippedIPPool := rawIPPool[0].Subnet.IpAddresses[2 : len(rawIPPool[0].Subnet.IpAddresses)-1]
+			for _, ibmcli := range strippedIPPool {
+				if *ibmcli.IpAddress == "" {
+					continue
+				}
+				var ip, ptr, note string
+				ip = *ibmcli.IpAddress
+				if ibmcli.Note == nil {
+					note = ""
 				} else {
-					ptr = *ptrRecord.Host
+					note = *ibmcli.Note
 				}
-				if ptr == string(host) {
-					tmpArray = [3]string{ip, *ptrRecord.Data, note}
-					break
+				match := re.FindStringSubmatch(*ibmcli.IpAddress)
+				host := match[1]
+				for _, ptrRecord := range strippedPTRPool {
+					if ptrRecord.Host == nil {
+						ptr = ""
+					} else {
+						ptr = *ptrRecord.Host
+					}
+					if ptr == string(host) {
+						tmpArray = [3]string{ip, *ptrRecord.Data, note}
+						break
+					}
+				}
+				if tmpArray == [3]string{} {
+					resultingArray = append(resultingArray, [3]string{ip, "", note})
+				} else {
+					resultingArray = append(resultingArray, tmpArray)
+				}
+				tmpArray = [3]string{}
+			}
+			for _, row := range resultingArray {
+				if row[1] == "" && row[2] == "" {
+					fmt.Println(row[0])
 				}
 			}
-			//printJSON(tmpArray)
-			if tmpArray == [3]string{} {
-				resultingArray = append(resultingArray, [3]string{ip, "", note})
-			} else {
+
+		}
+
+	} else {
+		filterNet = `{"subnets":
+			{
+			 "networkIdentifier":{"operation":"~ ^10\\..*"},
+			 "note":{"operation":"~ PARTIAL AVAILABLE"}
+			 }
+		}`
+		subnets, err := accountService.Mask(mask).Filter(filterNet).GetSubnets()
+		if err != nil {
+			fmt.Println("error: unable to get Subnets from Softlayer", err)
+			os.Exit(1)
+		}
+		fmt.Println("==============private networks============")
+		for _, subnet := range subnets {
+			var resultingArray [][3]string // [[ip,ptr,note],[ip,ptr,note]]
+			var tmpArray [3]string
+			fmt.Printf("---------- %s/%d,%s ----------\n", *subnet.NetworkIdentifier, *subnet.Cidr, *subnet.Gateway)
+			rawIPPool, _ := subnetService.Id(*subnet.Id).GetIpAddresses()
+			strippedIPPool := rawIPPool[0].Subnet.IpAddresses[2 : len(rawIPPool[0].Subnet.IpAddresses)-1]
+			for _, ibmcli := range strippedIPPool {
+				if *ibmcli.IpAddress == "" {
+					continue
+				}
+				var ip, note string
+				ip = *ibmcli.IpAddress
+				if ibmcli.Note == nil {
+					note = ""
+				} else {
+					note = *ibmcli.Note
+				}
+				tmpArray = [3]string{ip, note}
 				resultingArray = append(resultingArray, tmpArray)
 			}
-			tmpArray = [3]string{}
-		}
-		for _, row := range resultingArray {
-			printJSON(row)
-		}
-		//printJSON(resultingArray)
-		//for _, network := range ipPool {
-		//printJSON(net.Subnet.IpAddresses)
-		//}
-	}
-}
-
-/*
-
-	for _, ipaddr := range network.Subnet.IpAddresses {
-		if ipaddr.IpAddress != nil {
-			ipObject, _ := ipservice.Id(*ipaddr.Id).GetObject()
-			if *ipObject.IsBroadcast == false && *ipObject.IsNetwork == false && *ipObject.IsGateway == false {
-				if ipObject.Note == nil || *ipObject.Note == "free" {
-					for _, ptrObject := range ptrPool[0].ResourceRecords {
-						printJSON(ptrObject)
-						/*matcher := regexp.MustCompile(fmt.Sprintf(".*\\.%d$", ptrObject.Host))
-						if matcher.MatchString(*ipObject.IpAddress) {
-							fmt.Println(ipObject, ptrObject.Data)
-						}
-					}
-
-					//for _, ptrObject := range ptrPool {
-					//	printJSON(ptrObject)
-					//}
-					//printJSON(record)
+			for _, row := range resultingArray {
+				if row[1] == "" {
+					fmt.Println(row[0])
 				}
 			}
 		}
+
 	}
+}
 
-
-
-
-*/
-
-func (ip ipAddress) listFreeIPS() {
+func (cli softlayer) listFreeIPS() {
 	/// Find public IP
 	networkType := "public"
-	ip.findIPS(networkType)
+	cli.findIPS(networkType)
+	networkType = "private"
+	cli.findIPS(networkType)
 
 }
 
-func (ip ipAddress) pushPTR() {
-	dnsservice := services.GetDnsDomainService(ip.sess)
-	record, err := dnsservice.CreatePtrRecord(&ip.id, &ip.ptr, &ip.ttl)
+func (cli softlayer) deletePTR() {
+	dnsservice := services.GetDnsDomainResourceRecordService(cli.sess)
+	ptrObject, err := cli.getPTR()
+	if err != nil {
+		fmt.Println(err.Error())
+		return
+	}
+	fmt.Print("DELETE PTR: ")
+	printJSON(ptrObject)
+	_, err = dnsservice.Id(*ptrObject.Id).DeleteObject()
+	if err != nil {
+		fmt.Printf("error: %s\n", err.Error())
+	}
+}
+
+func (cli softlayer) pushPTR() {
+	dnsservice := services.GetDnsDomainService(cli.sess)
+	record, err := dnsservice.CreatePtrRecord(&cli.id, &cli.ptr, &cli.ttl)
 	if err != nil {
 		fmt.Printf("error: unable to update ptr %s ", err)
 		os.Exit(127)
@@ -162,83 +212,85 @@ func (ip ipAddress) pushPTR() {
 	printJSON(record)
 }
 
-func (ip ipAddress) updatePTR(force bool) {
-	if ip.isNetworkLocal() {
-		fmt.Println("this is internal ip. no ptr will be assigned")
+func (cli softlayer) updatePTR(force bool) {
+	if cli.isNetworkLocal() {
+		fmt.Println("this is internal cli. no ptr will be assigned")
 		return
 	}
-	if ip.ptr == "" {
-		ip.ptr = "FREE"
-	}
 
-	fmt.Printf("update PTR for IP %s to '%s'\n", ip.id, ip.ptr)
+	fmt.Printf("update PTR for cli %s to '%s'\n", cli.id, cli.ptr)
 
 	if force == false {
 		// remove without a prompt
 		confirm()
 	}
-	ip.pushPTR()
+	if cli.ptr == "" {
+		cli.deletePTR()
+	} else {
+		cli.pushPTR()
+	}
+
 }
 
-func (ip ipAddress) updateIPNote(force bool) {
+func (cli softlayer) updateIPNote(force bool) {
 
-	ipservice := services.GetNetworkSubnetIpAddressService(ip.sess)
-	ipObject, err := ipservice.GetByIpAddress(&ip.id)
+	ipservice := services.GetNetworkSubnetIpAddressService(cli.sess)
+	ipObject, err := ipservice.GetByIpAddress(&cli.id)
 	if ipObject.Id == nil {
-		fmt.Println("error: unable to find IP in IBM subnets")
+		fmt.Println("error: unable to find cli in IBM subnets")
 		if err != nil {
 			fmt.Printf("error: %s\n", err.Error())
 		}
 		os.Exit(2)
 	}
-	if ip.note == "" {
-		ip.note = "FREE"
-	}
-	currnetNote := "FREE"
+	//if cli.note == "" {
+	//	cli.note = "free"
+	//}
+	currnetNote := ""
 	if ipObject.Note != nil {
 		currnetNote = *ipObject.Note
 	}
-	fmt.Printf("update IP note for %s from: '%s' to '%s'\n", *ipObject.IpAddress, currnetNote, ip.note)
+	fmt.Printf("update cli note for %s from: '%s' to '%s'\n", *ipObject.IpAddress, currnetNote, cli.note)
 	if force == false {
 		confirm()
 	}
-	ipObject.Note = &ip.note
+	ipObject.Note = &cli.note
 	ipservice.Id(*ipObject.Id).EditObject(&ipObject)
-	ipObject2, err := ipservice.GetByIpAddress(&ip.id)
+	ipObject2, err := ipservice.GetByIpAddress(&cli.id)
 	if err != nil {
-		fmt.Println("updated, but we can not get new ip description form api")
+		fmt.Println("updated, but we can not get new cli description form api")
 	}
 	printJSON(ipObject2)
 }
 
 func main() {
 
-	list := flag.Bool("list", false, "list free ips")
-	ip := flag.String("ip", "", "ip address to delete in x.x.x.x form. default ''")
-	ptr := flag.String("ptr", "", "ip address ptr [hostname]. default 'free'")
-	ttl := flag.Int("ttl", 3600, "ttl for ptr. default 3600")
-	note := flag.String("note", "", "note about ip in ibm cloud [host.domain.com]. default ''")
 	force := flag.Bool("force", false, "force yes to rename prompt. Use with caution!!!. default false")
+	note := flag.String("note", "", "note about cli in ibm cloud [host.domain.com]. default ''")
+	ttl := flag.Int("ttl", 3600, "ttl for ptr. default 3600")
+	ptr := flag.String("ptr", "", "cli address ptr [hostname]. default ''")
+	cli := flag.String("ip", "", "ip address to delete in x.x.x.x form. default ''")
+	list := flag.Bool("list", false, "list free public and private ips")
 
 	flag.Parse()
 
 	if *list == false {
-		if flag.NFlag() == 0 || *ip == "" {
+		if flag.NFlag() == 0 || *cli == "" {
 			flag.PrintDefaults()
 			os.Exit(1)
 		}
 
-		ipToDelete := net.ParseIP(*ip)
+		ipToDelete := net.ParseIP(*cli)
 		if ipToDelete.To4() == nil {
-			fmt.Printf("error: ip '%s' is not valid ipv4 address \n", *ip)
+			fmt.Printf("error: cli '%s' is not valid ipv4 address \n", *cli)
 			os.Exit(127)
 		}
 	}
 	username := os.Getenv("SL_USER")
 	apikey := os.Getenv("SL_APIKEY")
 	sess := session.New(username, apikey)
-	address := ipAddress{
-		id:   *ip,
+	address := softlayer{
+		id:   *cli,
 		ptr:  *ptr,
 		ttl:  *ttl,
 		note: *note,
@@ -249,6 +301,7 @@ func main() {
 		address.listFreeIPS()
 		return
 	}
+
 	address.updatePTR(*force)
 	address.updateIPNote(*force)
 }
