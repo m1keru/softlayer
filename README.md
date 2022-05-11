@@ -18,8 +18,12 @@ go build
         list free public and private ips
   -note string
         note about cli in ibm cloud [host.domain.com]. default ''
+  -private
+        list only free private ips
   -ptr string
         cli address ptr [hostname]. default ''
+  -public
+        list only free public ips
   -ttl int
         ttl for ptr. default 3600 (default 3600)
 ```
