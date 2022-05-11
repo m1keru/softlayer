@@ -1,7 +1,7 @@
 package main
 
 /* TODO:
-* List free adddresses based on FREE record
+*  Rework -list to less ugly style
  */
 
 import (
@@ -21,12 +21,14 @@ import (
 )
 
 type softlayer struct {
-	id   string
-	ip   net.IP
-	ptr  string
-	ttl  int
-	note string
-	sess *session.Session
+	id          string
+	ip          net.IP
+	ptr         string
+	ttl         int
+	note        string
+	sess        *session.Session
+	listPublic  bool
+	listPrivate bool
 }
 
 func (cli softlayer) isNetworkLocal() bool {
@@ -180,11 +182,12 @@ func (cli softlayer) findIPS(networkType string) {
 
 func (cli softlayer) listFreeIPS() {
 	/// Find public IP
-	networkType := "public"
-	cli.findIPS(networkType)
-	networkType = "private"
-	cli.findIPS(networkType)
-
+	if cli.listPublic {
+		cli.findIPS("public")
+	}
+	if cli.listPrivate {
+		cli.findIPS("private")
+	}
 }
 
 func (cli softlayer) deletePTR() {
@@ -271,8 +274,15 @@ func main() {
 	ptr := flag.String("ptr", "", "cli address ptr [hostname]. default ''")
 	cli := flag.String("ip", "", "ip address to delete in x.x.x.x form. default ''")
 	list := flag.Bool("list", false, "list free public and private ips")
+	listPublic := flag.Bool("public", false, "list only free public ips")
+	listPrivate := flag.Bool("private", false, "list only free private ips")
 
 	flag.Parse()
+
+	if *list != false && *listPrivate == false && *listPublic == false {
+		*listPublic = true
+		*listPrivate = true
+	}
 
 	if *list == false {
 		if flag.NFlag() == 0 || *cli == "" {
@@ -290,11 +300,13 @@ func main() {
 	apikey := os.Getenv("SL_APIKEY")
 	sess := session.New(username, apikey)
 	address := softlayer{
-		id:   *cli,
-		ptr:  *ptr,
-		ttl:  *ttl,
-		note: *note,
-		sess: sess,
+		id:          *cli,
+		ptr:         *ptr,
+		ttl:         *ttl,
+		note:        *note,
+		sess:        sess,
+		listPublic:  *listPublic,
+		listPrivate: *listPrivate,
 	}
 
 	if *list {
