@@ -314,7 +314,13 @@ func main() {
 		return
 	}
 
-	address.updatePTR(*force)
+	re := regexp.MustCompile("10\\..*")
+	fmt.Println(address.id)
+	if re.MatchString(address.id) == false {
+		address.updatePTR(*force)
+	} else {
+		fmt.Println("skip ptr due to private ip")
+	}
 	address.updateIPNote(*force)
 }
 

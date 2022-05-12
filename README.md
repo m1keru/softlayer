@@ -27,3 +27,17 @@ go build
   -ttl int
     	ttl for ptr. default 3600 (default 3600)
 ```
+
+# Example
+## list
+```
+softlayer -list -public 
+```
+## create 
+```
+softlayer -ip 10.114.97.209 -ptr="tor1-prod-apiconfig-6.etrigan.net" -note "tor1-prod-apiconfig-6.etrigan.net" -ttl=3600
+```
+## delete
+```
+softlayer -ip 10.114.97.209 -ptr= -note=
+```
