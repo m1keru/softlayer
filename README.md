@@ -11,7 +11,7 @@ go build
 ```bash
 ./softlayer
   -force
-    	force yes to rename prompt. Use with caution!!!. default false
+    	force yes to rename prompt. Use with caution!!! default false
   -ip string
     	ip address to delete in x.x.x.x form. default ''
   -list
@@ -25,7 +25,7 @@ go build
   -public
     	list only free public ips [use only with -list]
   -ttl int
-    	ttl for ptr. default 3600 (default 3600)
+    	ttl for ptr. default 3600
 ```
 
 # Example

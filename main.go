@@ -268,9 +268,9 @@ func (cli softlayer) updateIPNote(force bool) {
 
 func main() {
 
-	force := flag.Bool("force", false, "force yes to rename prompt. Use with caution!!!. default false")
+	force := flag.Bool("force", false, "force yes to rename prompt. Use with caution!!! default false")
 	note := flag.String("note", "", "note about cli in ibm cloud [host.domain.com]. default ''")
-	ttl := flag.Int("ttl", 3600, "ttl for ptr. default 3600")
+	ttl := flag.Int("ttl", 3600, "ttl for ptr.")
 	ptr := flag.String("ptr", "", "cli address ptr [hostname]. default ''")
 	cli := flag.String("ip", "", "ip address to delete in x.x.x.x form. default ''")
 	list := flag.Bool("list", false, "list free public and private ips")
