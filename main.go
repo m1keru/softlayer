@@ -80,7 +80,7 @@ func (cli softlayer) findIPS(networkType string) {
 		filterNet = `{"subnets":
 			{
 			 "networkIdentifier":{"operation":"!~ ^10\\..*"},
-			 "note":{"operation":"~ PARTIAL AVAILABLE"}
+			 "note":{"operation":"!~ ONLY FOR METAL"}
 			 }
 		}`
 		subnets, err := accountService.Mask(mask).Filter(filterNet).GetSubnets()
@@ -141,7 +141,7 @@ func (cli softlayer) findIPS(networkType string) {
 		filterNet = `{"subnets":
 			{
 			 "networkIdentifier":{"operation":"~ ^10\\..*"},
-			 "note":{"operation":"~ PARTIAL AVAILABLE"}
+			 "note":{"operation":"!~ ONLY FOR METAL"}
 			 }
 		}`
 		subnets, err := accountService.Mask(mask).Filter(filterNet).GetSubnets()
@@ -274,8 +274,8 @@ func main() {
 	ptr := flag.String("ptr", "", "cli address ptr [hostname]. default ''")
 	cli := flag.String("ip", "", "ip address to delete in x.x.x.x form. default ''")
 	list := flag.Bool("list", false, "list free public and private ips")
-	listPublic := flag.Bool("public", false, "list only free public ips")
-	listPrivate := flag.Bool("private", false, "list only free private ips")
+	listPublic := flag.Bool("public", false, "list only free public ips [use only with -list]")
+	listPrivate := flag.Bool("private", false, "list only free private ips [use only with -list]")
 
 	flag.Parse()
 
@@ -314,7 +314,13 @@ func main() {
 		return
 	}
 
-	address.updatePTR(*force)
+	re := regexp.MustCompile("10\\..*")
+	fmt.Println(address.id)
+	if re.MatchString(address.id) == false {
+		address.updatePTR(*force)
+	} else {
+		fmt.Println("skip ptr due to private ip")
+	}
 	address.updateIPNote(*force)
 }
 
