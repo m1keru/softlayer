@@ -27,3 +27,17 @@ go build
   -ttl int
         ttl for ptr. default 3600 (default 3600)
 ```
+
+# Example    
+## list    
+```    
+softlayer -list -public     
+```    
+## create     
+```    
+softlayer -ip 10.114.123.123 -ptr="my.example.com" -note "my.example.com" -ttl=3600    
+```    
+## delete    
+```    
+softlayer -ip 10.114.123.123 -ptr= -note=    
+
