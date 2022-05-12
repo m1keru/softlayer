@@ -11,19 +11,19 @@ go build
 ```bash
 ./softlayer
   -force
-        force yes to rename prompt. Use with caution!!!. default false
+    	force yes to rename prompt. Use with caution!!!. default false
   -ip string
-        ip address to delete in x.x.x.x form. default ''
+    	ip address to delete in x.x.x.x form. default ''
   -list
-        list free public and private ips
+    	list free public and private ips
   -note string
-        note about cli in ibm cloud [host.domain.com]. default ''
+    	note about cli in ibm cloud [host.domain.com]. default ''
   -private
-        list only free private ips
+    	list only free private ips [use only with -list]
   -ptr string
-        cli address ptr [hostname]. default ''
+    	cli address ptr [hostname]. default ''
   -public
-        list only free public ips
+    	list only free public ips [use only with -list]
   -ttl int
-        ttl for ptr. default 3600 (default 3600)
+    	ttl for ptr. default 3600 (default 3600)
 ```
