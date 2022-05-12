@@ -80,7 +80,7 @@ func (cli softlayer) findIPS(networkType string) {
 		filterNet = `{"subnets":
 			{
 			 "networkIdentifier":{"operation":"!~ ^10\\..*"},
-			 "note":{"operation":"~ PARTIAL AVAILABLE"}
+			 "note":{"operation":"!~ ONLY FOR METAL"}
 			 }
 		}`
 		subnets, err := accountService.Mask(mask).Filter(filterNet).GetSubnets()
@@ -141,7 +141,7 @@ func (cli softlayer) findIPS(networkType string) {
 		filterNet = `{"subnets":
 			{
 			 "networkIdentifier":{"operation":"~ ^10\\..*"},
-			 "note":{"operation":"~ PARTIAL AVAILABLE"}
+			 "note":{"operation":"!~ ONLY FOR METAL"}
 			 }
 		}`
 		subnets, err := accountService.Mask(mask).Filter(filterNet).GetSubnets()
