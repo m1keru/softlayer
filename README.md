@@ -13,7 +13,7 @@ go build
   -force
     	force yes to rename prompt. Use with caution!!! default false
   -ip string
-    	ip address to delete in x.x.x.x form. default ''
+    	ip address to deal with in x.x.x.x form. default ''
   -list
     	list free public and private ips
   -note string
@@ -39,5 +39,9 @@ softlayer -ip 10.114.97.209 -ptr="tor1-prod-apiconfig-6.etrigan.net" -note "tor1
 ```
 ## delete
 ```
-softlayer -ip 10.114.97.209 -ptr= -note=
+softlayer -ip 10.114.97.209 -ptr= -note= 
+
+or just
+
+softlayer --ip=10.114.97.209
 ```
