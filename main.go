@@ -31,6 +31,10 @@ type softlayer struct {
 	listPrivate bool
 }
 
+/*
+isNetworkLocal -- check if network is private
+*/
+
 func (cli softlayer) isNetworkLocal() bool {
 	network := "10.0.0.0/8"
 	_, subnet, _ := net.ParseCIDR(network)
@@ -39,6 +43,10 @@ func (cli softlayer) isNetworkLocal() bool {
 	}
 	return false
 }
+
+/*
+getPTR -- get currnet PTR Object for the IP
+*/
 
 func (cli softlayer) getPTR() (datatypes.Dns_Domain_ResourceRecord, error) {
 	re := regexp.MustCompile(".*\\.(.*)$")
@@ -69,6 +77,10 @@ func (cli softlayer) getPTR() (datatypes.Dns_Domain_ResourceRecord, error) {
 	}
 	return datatypes.Dns_Domain_ResourceRecord{}, errors.New("PTR not found")
 }
+
+/*
+findIPS -- find free IPS
+*/
 
 func (cli softlayer) findIPS(networkType string) {
 	var filterNet string
@@ -180,6 +192,11 @@ func (cli softlayer) findIPS(networkType string) {
 	}
 }
 
+/*
+listFreeIPS -- list all free IPS or only public or private
+			   based on commandline arguments
+*/
+
 func (cli softlayer) listFreeIPS() {
 	/// Find public IP
 	if cli.listPublic {
@@ -189,6 +206,10 @@ func (cli softlayer) listFreeIPS() {
 		cli.findIPS("private")
 	}
 }
+
+/*
+deletePTR -- delete PTR record
+*/
 
 func (cli softlayer) deletePTR() {
 	dnsservice := services.GetDnsDomainResourceRecordService(cli.sess)
@@ -205,6 +226,10 @@ func (cli softlayer) deletePTR() {
 	}
 }
 
+/*
+pushPTR -- update PTR record
+*/
+
 func (cli softlayer) pushPTR() {
 	dnsservice := services.GetDnsDomainService(cli.sess)
 	record, err := dnsservice.CreatePtrRecord(&cli.id, &cli.ptr, &cli.ttl)
@@ -215,6 +240,11 @@ func (cli softlayer) pushPTR() {
 	printJSON(record)
 }
 
+/*
+updatePTR -- update PTR record in IBM.
+			 if given value is empty telete PTR.
+*/
+
 func (cli softlayer) updatePTR(force bool) {
 	if cli.isNetworkLocal() {
 		fmt.Println("this is internal cli. no ptr will be assigned")
@@ -224,7 +254,6 @@ func (cli softlayer) updatePTR(force bool) {
 	fmt.Printf("update PTR for cli %s to '%s'\n", cli.id, cli.ptr)
 
 	if force == false {
-		// remove without a prompt
 		confirm()
 	}
 	if cli.ptr == "" {
@@ -234,6 +263,10 @@ func (cli softlayer) updatePTR(force bool) {
 	}
 
 }
+
+/*
+updateIPNote -- update ip-address notes in IBM
+*/
 
 func (cli softlayer) updateIPNote(force bool) {
 
@@ -246,9 +279,6 @@ func (cli softlayer) updateIPNote(force bool) {
 		}
 		os.Exit(2)
 	}
-	//if cli.note == "" {
-	//	cli.note = "free"
-	//}
 	currnetNote := ""
 	if ipObject.Note != nil {
 		currnetNote = *ipObject.Note
@@ -266,11 +296,15 @@ func (cli softlayer) updateIPNote(force bool) {
 	printJSON(ipObject2)
 }
 
+/*
+main - main loop
+*/
+
 func main() {
 
-	force := flag.Bool("force", false, "force yes to rename prompt. Use with caution!!!. default false")
+	force := flag.Bool("force", false, "force yes to rename prompt. Use with caution!!! default false")
 	note := flag.String("note", "", "note about cli in ibm cloud [host.domain.com]. default ''")
-	ttl := flag.Int("ttl", 3600, "ttl for ptr. default 3600")
+	ttl := flag.Int("ttl", 3600, "ttl for ptr.")
 	ptr := flag.String("ptr", "", "cli address ptr [hostname]. default ''")
 	cli := flag.String("ip", "", "ip address to delete in x.x.x.x form. default ''")
 	list := flag.Bool("list", false, "list free public and private ips")
@@ -324,6 +358,10 @@ func main() {
 	address.updateIPNote(*force)
 }
 
+/*
+printJSON -- prints json view of objects
+*/
+
 func printJSON(obj interface{}) {
 	jsonFormat, jsonErr := json.Marshal(obj)
 	if jsonErr != nil {
@@ -334,10 +372,12 @@ func printJSON(obj interface{}) {
 
 }
 
+/*
+confirm -- Ask for confirmation before procedure, default -- skip procedure
+*/
 func confirm() bool {
 	var s string
 	fmt.Printf("(y/N): ")
-	//_, err := fmt.Scan(&s)
 	reader := bufio.NewReader(os.Stdin)
 	s, err := reader.ReadString('\n')
 	if err != nil {
