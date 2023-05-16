@@ -18,6 +18,8 @@ import (
 	"github.com/softlayer/softlayer-go/datatypes"
 	"github.com/softlayer/softlayer-go/services"
 	"github.com/softlayer/softlayer-go/session"
+
+	log "github.com/sirupsen/logrus"
 )
 
 type softlayer struct {
@@ -29,6 +31,7 @@ type softlayer struct {
 	sess        *session.Session
 	listPublic  bool
 	listPrivate bool
+	getOne      bool
 }
 
 /*
@@ -38,10 +41,7 @@ isNetworkLocal -- check if network is private
 func (cli softlayer) isNetworkLocal() bool {
 	network := "10.0.0.0/8"
 	_, subnet, _ := net.ParseCIDR(network)
-	if subnet.Contains(cli.ip) {
-		return true
-	}
-	return false
+	return subnet.Contains(cli.ip)
 }
 
 /*
@@ -49,13 +49,13 @@ getPTR -- get currnet PTR Object for the IP
 */
 
 func (cli softlayer) getPTR() (datatypes.Dns_Domain_ResourceRecord, error) {
-	re := regexp.MustCompile(".*\\.(.*)$")
+	re := regexp.MustCompile(`.*\.(.*)$`)
 	ipservice := services.GetNetworkSubnetIpAddressService(cli.sess)
 	ipObject, err := ipservice.GetByIpAddress(&cli.id)
 	if ipObject.Id == nil {
-		fmt.Println("error: unable to find cli in IBM subnets")
+		log.Errorf("error: unable to find cli in IBM subnets")
 		if err != nil {
-			fmt.Printf("error: %s\n", err.Error())
+			log.Errorf("error: %s\n", err.Error())
 		}
 		os.Exit(2)
 	}
@@ -82,12 +82,12 @@ func (cli softlayer) getPTR() (datatypes.Dns_Domain_ResourceRecord, error) {
 findIPS -- find free IPS
 */
 
-func (cli softlayer) findIPS(networkType string) {
+func (cli softlayer) findIPS(networkType string) [][3]string {
 	var filterNet string
 	mask := "id,networkIdentifier,note,cidr,gateway"
 	accountService := services.GetAccountService(cli.sess)
 	subnetService := services.GetNetworkSubnetService(cli.sess)
-	re := regexp.MustCompile(".*\\.(.*)$")
+	re := regexp.MustCompile(`.*\.(.*)$`)
 	if networkType == "public" {
 		filterNet = `{"subnets":
 			{
@@ -102,15 +102,16 @@ func (cli softlayer) findIPS(networkType string) {
 		}`
 		subnets, err := accountService.Mask(mask).Filter(filterNet).GetSubnets()
 		if err != nil {
-			fmt.Println("error: unable to get Subnets from Softlayer", err)
+			log.Errorf("error: unable to get Subnets from Softlayer", err)
 			os.Exit(1)
 		}
-
-		fmt.Println("==============public networks============")
+		log.Debug("public subnets:")
 		for _, subnet := range subnets {
 			var resultingArray [][3]string // [[ip,ptr,note],[ip,ptr,note]]
 			var tmpArray [3]string
-			fmt.Printf("----- %s/%d,%s -----\n", *subnet.NetworkIdentifier, *subnet.Cidr, *subnet.Gateway)
+			if !cli.getOne {
+				fmt.Printf("----- %s/%d,%s -----\n", *subnet.NetworkIdentifier, *subnet.Cidr, *subnet.Gateway)
+			}
 			rawPTRPool, _ := subnetService.Id(*subnet.Id).GetReverseDomainRecords()
 			strippedPTRPool := rawPTRPool[0].ResourceRecords
 			rawIPPool, _ := subnetService.Id(*subnet.Id).GetIpAddresses()
@@ -137,6 +138,14 @@ func (cli softlayer) findIPS(networkType string) {
 					if ptr == string(host) {
 						tmpArray = [3]string{ip, *ptrRecord.Data, note}
 						break
+					}
+				}
+				if cli.getOne {
+					if tmpArray[1] == "" && tmpArray[2] == "" {
+						log.Debug("only one ip is enabled format: {ip, *subnet.NetworkIdentifier, *subnet.Cidr, *subnet.Gateway}")
+						fmt.Printf("%s/%d %s \n", ip, *subnet.Cidr, *subnet.Gateway)
+						resultingArray = [][3]string{{ip, fmt.Sprintf("%d", *subnet.Cidr), *subnet.Gateway}}
+						return resultingArray
 					}
 				}
 				if tmpArray == [3]string{} {
@@ -171,11 +180,13 @@ func (cli softlayer) findIPS(networkType string) {
 			fmt.Println("error: unable to get Subnets from Softlayer", err)
 			os.Exit(1)
 		}
-		fmt.Println("==============private networks============")
+		log.Debug("private subnets:")
 		for _, subnet := range subnets {
 			var resultingArray [][3]string // [[ip,ptr,note],[ip,ptr,note]]
 			var tmpArray [3]string
-			fmt.Printf("---------- %s/%d,%s ----------\n", *subnet.NetworkIdentifier, *subnet.Cidr, *subnet.Gateway)
+			if !cli.getOne {
+				fmt.Printf("----- %s/%d,%s -----\n", *subnet.NetworkIdentifier, *subnet.Cidr, *subnet.Gateway)
+			}
 			rawIPPool, _ := subnetService.Id(*subnet.Id).GetIpAddresses()
 			strippedIPPool := rawIPPool[0].Subnet.IpAddresses[2 : len(rawIPPool[0].Subnet.IpAddresses)-1]
 			for _, ibmcli := range strippedIPPool {
@@ -190,6 +201,14 @@ func (cli softlayer) findIPS(networkType string) {
 					note = *ibmcli.Note
 				}
 				tmpArray = [3]string{ip, note}
+				if cli.getOne {
+					if tmpArray[1] == "" {
+						log.Debug("only one ip is enabled format: {ip, *subnet.NetworkIdentifier, *subnet.Cidr, *subnet.Gateway}")
+						fmt.Printf("%s/%d %s\n", ip, *subnet.Cidr, *subnet.Gateway)
+						resultingArray = [][3]string{{ip, fmt.Sprintf("%d", *subnet.Cidr), *subnet.Gateway}}
+						return resultingArray
+					}
+				}
 				resultingArray = append(resultingArray, tmpArray)
 			}
 			for _, row := range resultingArray {
@@ -200,6 +219,7 @@ func (cli softlayer) findIPS(networkType string) {
 		}
 
 	}
+	return [][3]string{}
 }
 
 /*
@@ -225,14 +245,14 @@ func (cli softlayer) deletePTR() {
 	dnsservice := services.GetDnsDomainResourceRecordService(cli.sess)
 	ptrObject, err := cli.getPTR()
 	if err != nil {
-		fmt.Println(err.Error())
+		log.Errorf("error: %s\n", err.Error())
 		return
 	}
 	fmt.Print("DELETE PTR: ")
 	printJSON(ptrObject)
 	_, err = dnsservice.Id(*ptrObject.Id).DeleteObject()
 	if err != nil {
-		fmt.Printf("error: %s\n", err.Error())
+		log.Errorf("error: %s\n", err.Error())
 	}
 }
 
@@ -244,7 +264,7 @@ func (cli softlayer) pushPTR() {
 	dnsservice := services.GetDnsDomainService(cli.sess)
 	record, err := dnsservice.CreatePtrRecord(&cli.id, &cli.ptr, &cli.ttl)
 	if err != nil {
-		fmt.Printf("error: unable to update ptr %s ", err)
+		log.Errorf("error: unable to update ptr %s ", err)
 		os.Exit(127)
 	}
 	printJSON(record)
@@ -257,13 +277,13 @@ updatePTR -- update PTR record in IBM.
 
 func (cli softlayer) updatePTR(force bool) {
 	if cli.isNetworkLocal() {
-		fmt.Println("this is internal cli. no ptr will be assigned")
+		log.Debugln("this is internal cli. no ptr will be assigned")
 		return
 	}
 
-	fmt.Printf("update PTR for cli %s to '%s'\n", cli.id, cli.ptr)
+	log.Debugf("update PTR for cli %s to '%s'\n", cli.id, cli.ptr)
 
-	if force == false {
+	if !force {
 		confirm()
 	}
 	if cli.ptr == "" {
@@ -283,9 +303,9 @@ func (cli softlayer) updateIPNote(force bool) {
 	ipservice := services.GetNetworkSubnetIpAddressService(cli.sess)
 	ipObject, err := ipservice.GetByIpAddress(&cli.id)
 	if ipObject.Id == nil {
-		fmt.Println("error: unable to find cli in IBM subnets")
+		log.Errorln("error: unable to find cli in IBM subnets")
 		if err != nil {
-			fmt.Printf("error: %s\n", err.Error())
+			log.Errorf("error: %s\n", err.Error())
 		}
 		os.Exit(2)
 	}
@@ -293,15 +313,15 @@ func (cli softlayer) updateIPNote(force bool) {
 	if ipObject.Note != nil {
 		currnetNote = *ipObject.Note
 	}
-	fmt.Printf("update cli note for %s from: '%s' to '%s'\n", *ipObject.IpAddress, currnetNote, cli.note)
-	if force == false {
+	log.Debugf("update cli note for %s from: '%s' to '%s'\n", *ipObject.IpAddress, currnetNote, cli.note)
+	if !force {
 		confirm()
 	}
 	ipObject.Note = &cli.note
 	ipservice.Id(*ipObject.Id).EditObject(&ipObject)
 	ipObject2, err := ipservice.GetByIpAddress(&cli.id)
 	if err != nil {
-		fmt.Println("updated, but we can not get new cli description form api")
+		log.Warningln("updated, but we can not get new cli description form api")
 	}
 	printJSON(ipObject2)
 }
@@ -316,19 +336,30 @@ func main() {
 	note := flag.String("note", "", "note about cli in ibm cloud [host.domain.com]. default ''")
 	ttl := flag.Int("ttl", 3600, "ttl for ptr.")
 	ptr := flag.String("ptr", "", "cli address ptr [hostname]. default ''")
-	cli := flag.String("ip", "", "ip address to delete in x.x.x.x form. default ''")
+	cli := flag.String("ip", "", "ip address to update in x.x.x.x form. default ''")
 	list := flag.Bool("list", false, "list free public and private ips")
 	listPublic := flag.Bool("public", false, "list only free public ips [use only with -list]")
 	listPrivate := flag.Bool("private", false, "list only free private ips [use only with -list]")
+	getOne := flag.Bool("one", false, "get first free ip [use only with -list]")
+	debug := flag.Bool("debug", false, "set logger to debug")
+	lease := flag.Bool("lease", false, "lease ip [ptr,note - required]")
 
 	flag.Parse()
 
-	if *list != false && *listPrivate == false && *listPublic == false {
+	logLevel := log.InfoLevel
+	if *debug {
+		logLevel = log.DebugLevel
+	}
+	log.SetFormatter(&log.JSONFormatter{})
+	log.SetOutput(os.Stdout)
+	log.SetLevel(logLevel)
+
+	if *list && !*listPrivate && !*listPublic {
 		*listPublic = true
 		*listPrivate = true
 	}
 
-	if *list == false {
+	if !*list && !*lease {
 		if flag.NFlag() == 0 || *cli == "" {
 			flag.PrintDefaults()
 			os.Exit(1)
@@ -336,7 +367,7 @@ func main() {
 
 		ipToDelete := net.ParseIP(*cli)
 		if ipToDelete.To4() == nil {
-			fmt.Printf("error: cli '%s' is not valid ipv4 address \n", *cli)
+			log.Errorf("error: cli '%s' is not valid ipv4 address \n", *cli)
 			os.Exit(127)
 		}
 	}
@@ -351,6 +382,17 @@ func main() {
 		sess:        sess,
 		listPublic:  *listPublic,
 		listPrivate: *listPrivate,
+		getOne:      *getOne,
+	}
+
+	if *lease {
+		address.getOne = true
+		*list = true
+		privateIP := address.findIPS("private")
+		publicIP := address.findIPS("public")
+		fmt.Println(privateIP[0])
+		fmt.Println(publicIP[0])
+		return
 	}
 
 	if *list {
@@ -358,12 +400,12 @@ func main() {
 		return
 	}
 
-	re := regexp.MustCompile("10\\..*")
-	fmt.Println(address.id)
-	if re.MatchString(address.id) == false {
+	re := regexp.MustCompile(`10\..*`)
+	log.Debugln(address.id)
+	if !re.MatchString(address.id) {
 		address.updatePTR(*force)
 	} else {
-		fmt.Println("skip ptr due to private ip")
+		log.Debug("skip ptr due to private ip")
 	}
 	address.updateIPNote(*force)
 }
@@ -375,10 +417,10 @@ printJSON -- prints json view of objects
 func printJSON(obj interface{}) {
 	jsonFormat, jsonErr := json.Marshal(obj)
 	if jsonErr != nil {
-		fmt.Println(jsonErr)
+		log.Errorln(jsonErr)
 		os.Exit(130)
 	}
-	fmt.Println("Object: ", string(jsonFormat))
+	log.Debugln(string(jsonFormat))
 
 }
 
