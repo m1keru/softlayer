@@ -284,6 +284,7 @@ func (cli softlayer) updatePTR(force bool) {
 	log.Debugf("update PTR for cli %s to '%s'\n", cli.id, cli.ptr)
 
 	if !force {
+		log.Infof("update PTR for cli %s to '%s'\n", cli.id, cli.ptr)
 		confirm()
 	}
 	if cli.ptr == "" {
@@ -315,6 +316,7 @@ func (cli softlayer) updateIPNote(force bool) {
 	}
 	log.Debugf("update cli note for %s from: '%s' to '%s'\n", *ipObject.IpAddress, currnetNote, cli.note)
 	if !force {
+		log.Infof("update cli note for %s from: '%s' to '%s'\n", *ipObject.IpAddress, currnetNote, cli.note)
 		confirm()
 	}
 	ipObject.Note = &cli.note
@@ -386,12 +388,20 @@ func main() {
 	}
 
 	if *lease {
+		if *ptr == "" && *note == "" {
+			log.Error("--ptr and --note required when --lease flag provided")
+			os.Exit(124)
+		}
 		address.getOne = true
 		*list = true
 		privateIP := address.findIPS("private")
 		publicIP := address.findIPS("public")
-		fmt.Println(privateIP[0])
-		fmt.Println(publicIP[0])
+		address.id = privateIP[0][0]
+		address.updatePTR(*force)
+		address.updateIPNote(*force)
+		address.id = publicIP[0][0]
+		address.updatePTR(*force)
+		address.updateIPNote(*force)
 		return
 	}
 
