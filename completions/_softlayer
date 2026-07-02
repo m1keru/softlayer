@@ -1,0 +1,104 @@
+#compdef softlayer
+# zsh completion for softlayer
+# Install: softlayer completion zsh > "${fpath[1]}/_softlayer"
+
+_softlayer_cmd() {
+    case "$1" in
+        -list)     print -r list ;;
+        -lease)     print -r lease ;;
+        -liststale) print -r stale ;;
+        *)          print -r "$1" ;;
+    esac
+}
+
+_softlayer() {
+    local -a commands legacy_commands
+    commands=(
+        'list:list subnets and their IPs (free ones by default)'
+        'set:set PTR and/or note for an IP'
+        'clear:remove PTR and note from an IP'
+        'lease:reserve first free private+public IP pair'
+        'stale:list public IPs that do not answer pings'
+        'completion:print shell completion script'
+        'version:print the version number'
+        'help:show usage'
+    )
+    legacy_commands=(
+        '-list:list free public and private ips (legacy)'
+        '-lease:lease ip pair (legacy)'
+        '-liststale:list stale ips (legacy)'
+        '-version:print version (legacy)'
+    )
+
+    if (( CURRENT == 2 )); then
+        if [[ "${words[2]}" == -* ]]; then
+            _describe 'legacy flag' legacy_commands
+        else
+            _describe 'command' commands
+        fi
+        return
+    fi
+
+    local cmd
+    cmd="$(_softlayer_cmd "${words[2]}")"
+
+    case "$cmd" in
+        list)
+            _arguments \
+                '-public[list only public subnets]' \
+                '-private[list only private subnets]' \
+                '-all[show all IPs, not only free ones]' \
+                '-one[print only the first free IP]' \
+                '-json[output JSON instead of a table]' \
+                '*-exclude-note[exclude subnets whose IBM note contains this string]:note:' \
+                '*-exclude-cidr[exclude subnet by CIDR]:cidr:' \
+                '-no-default-excludes[do not apply built-in subnet note exclusions]' \
+                '(-h --help)-h[show help]' \
+                '(-h --help)--help[show help]'
+            ;;
+        set)
+            _arguments \
+                '-ip[IPv4 address (required)]:IPv4 address:' \
+                '-ptr[PTR hostname to assign]:hostname:' \
+                '-note[note to assign to the IP]:note:' \
+                '-ttl[TTL for the PTR record]:seconds:' \
+                '-force[do not ask for confirmation]' \
+                '(-h --help)-h[show help]' \
+                '(-h --help)--help[show help]'
+            ;;
+        clear)
+            _arguments \
+                '-ip[IPv4 address (required)]:IPv4 address:' \
+                '-force[do not ask for confirmation]' \
+                '(-h --help)-h[show help]' \
+                '(-h --help)--help[show help]'
+            ;;
+        lease)
+            _arguments \
+                '-ptr[PTR hostname for the leased IPs (required)]:hostname:' \
+                '-note[note for the leased IPs (required)]:note:' \
+                '-ttl[TTL for the PTR record]:seconds:' \
+                '-search[DNS search domain for the generated config]:domain:' \
+                '-force[do not ask for confirmation]' \
+                '*-exclude-note[exclude subnets whose IBM note contains this string]:note:' \
+                '*-exclude-cidr[exclude subnet by CIDR]:cidr:' \
+                '-no-default-excludes[do not apply built-in subnet note exclusions]' \
+                '(-h --help)-h[show help]' \
+                '(-h --help)--help[show help]'
+            ;;
+        stale)
+            _arguments \
+                '-json[output JSON instead of a table]' \
+                '*-exclude-note[exclude subnets whose IBM note contains this string]:note:' \
+                '*-exclude-cidr[exclude subnet by CIDR]:cidr:' \
+                '-no-default-excludes[do not apply built-in subnet note exclusions]' \
+                '(-h --help)-h[show help]' \
+                '(-h --help)--help[show help]'
+            ;;
+        completion)
+            _values 'shell' bash zsh
+            ;;
+    esac
+}
+
+_softlayer "$@"
