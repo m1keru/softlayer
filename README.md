@@ -131,3 +131,22 @@ make clean   # remove build artifacts
 CI (GitHub Actions) runs tests and golangci-lint on every push and pull
 request, then cross-compiles binaries for all supported platforms and uploads
 them as workflow artifacts.
+
+## Releases
+
+Push a semver tag to build and publish release binaries (linux/darwin,
+amd64/arm64):
+
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+The [Release workflow](.github/workflows/release.yml) attaches these files
+to the GitHub Release:
+
+- `softlayer-linux-amd64`
+- `softlayer-linux-arm64`
+- `softlayer-darwin-amd64`
+- `softlayer-darwin-arm64`
+- `checksums.txt` (sha256)
