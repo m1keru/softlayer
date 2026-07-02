@@ -1,5 +1,7 @@
 # softlayer
 
+Author: **m1keru** · [1@m1ke.ru](mailto:1@m1ke.ru)
+
 CLI tool to manage IP address notes and PTR records in IBM SoftLayer
 (Classic Infrastructure).
 
